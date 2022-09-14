@@ -1,5 +1,4 @@
 // MP 1
-// aakashh2
 #include <wb.h>
 #include <cuda.h>
 
