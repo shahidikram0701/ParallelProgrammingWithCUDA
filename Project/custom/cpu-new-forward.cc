@@ -32,10 +32,28 @@ void conv_forward_cpu(float *output, const float *input, const float *mask, cons
   #define in_4d(i3, i2, i1, i0) input[(i3) * (Channel * Height * Width) + (i2) * (Height * Width) + (i1) * (Width) + i0]
   #define mask_4d(i3, i2, i1, i0) mask[(i3) * (Channel * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
-  // Insert your CPU convolution kernel code here
+  for(int b = 0; b < Batch; ++b) {
+    for(int m = 0; m < Map_out; ++m) {
+      for(int output_i = 0; output_i < Height_out; ++output_i) {
+        for(int output_j = 0; output_j < Width_out; ++output_j) {
+          float conv = 0.0;
+          for(int c = 0; c < Channel; ++c) {
+            for(int mask_i = 0; mask_i < K; ++mask_i) {
+              for(int mask_j = 0; mask_j < K; ++mask_j) {
+                conv += (in_4d(b, c, output_i + mask_i, output_j + mask_j) * mask_4d(m, c, mask_i, mask_j));
+              }
+            }
+          }
+          out_4d(b, m, output_i, output_j) = conv;
+        }
+      }
+    }
+  }
 
   #undef out_4d
   #undef in_4d
   #undef mask_4d
 
 }
+
+// http://s3.amazonaws.com/files.rai-project.com/userdata/build-6346218db1b11b344de7fb3b.tar.gz
