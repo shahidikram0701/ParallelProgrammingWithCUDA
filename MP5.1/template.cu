@@ -4,7 +4,7 @@
 
 #include <wb.h>
 
-#define BLOCK_SIZE 512 //@@ You can change this
+#define BLOCK_SIZE 256 //@@ You can change this
 
 #define wbCheck(stmt)                                                     \
   do {                                                                    \
@@ -17,10 +17,26 @@
   } while (0)
   
 __global__ void total(float *input, float *output, int len) {
-  //@@ Load a segment of the input vector into shared memory
-  //@@ Traverse the reduction tree
-  //@@ Write the computed sum of the block to the output vector at the
-  //@@ correct index
+  __shared__ float buffer[2 * BLOCK_SIZE];
+
+  int tx = threadIdx.x;
+  int i = (blockIdx.x * blockDim.x) * 2 + tx;
+
+  buffer[tx] = input[i];
+  if((i + BLOCK_SIZE) < len) {
+     buffer[tx + BLOCK_SIZE] = input[i + BLOCK_SIZE];
+  } else {
+    buffer[tx + BLOCK_SIZE] = 0.0;
+  }
+ 
+
+  for(int stride = blockDim.x; stride >= 1; stride /= 2) {
+    __syncthreads();
+    if (tx < stride)
+      buffer[tx] = buffer[tx] + buffer[tx + stride];
+  }
+
+  output[blockIdx.x] = buffer[0];
 }
 
 int main(int argc, char **argv) {
@@ -50,24 +66,38 @@ int main(int argc, char **argv) {
         numOutputElements);
 
   wbTime_start(GPU, "Allocating GPU memory.");
-  //@@ Allocate GPU memory here
+  //___________________Allocating GPU memory here______________________________
+
+  cudaMalloc((void **) &deviceInput, numInputElements * sizeof(float));
+  cudaMalloc((void **) &deviceOutput, numOutputElements * sizeof(float));
 
   wbTime_stop(GPU, "Allocating GPU memory.");
 
   wbTime_start(GPU, "Copying input memory to the GPU.");
-  //@@ Copy memory to the GPU here
+  
+  //___________________Copying memory to the GPU here_________________________
+
+  cudaMemcpy(deviceInput, hostInput, numInputElements * sizeof(float), cudaMemcpyHostToDevice);
 
   wbTime_stop(GPU, "Copying input memory to the GPU.");
-  //@@ Initialize the grid and block dimensions here
+
+  //________________Initializing the grid and block dimensions here___________
+
+  dim3 DimGrid(ceil(float(numInputElements) / (BLOCK_SIZE << 1)), 1, 1);
+  dim3 DimBlock(BLOCK_SIZE, 1, 1);
 
   wbTime_start(Compute, "Performing CUDA computation");
-  //@@ Launch the GPU Kernel here
+
+  total<<<DimGrid, DimBlock>>>(deviceInput, deviceOutput, numInputElements); 
 
   cudaDeviceSynchronize();
   wbTime_stop(Compute, "Performing CUDA computation");
 
   wbTime_start(Copy, "Copying output memory to the CPU");
-  //@@ Copy the GPU memory back to the CPU here
+
+  //_____________Copy the GPU memory back to the CPU here_________________
+
+  cudaMemcpy(hostOutput, deviceOutput, numOutputElements * sizeof(float), cudaMemcpyDeviceToHost);
 
   wbTime_stop(Copy, "Copying output memory to the CPU");
 
@@ -82,7 +112,11 @@ int main(int argc, char **argv) {
   }
 
   wbTime_start(GPU, "Freeing GPU Memory");
-  //@@ Free the GPU memory here
+
+  //_____________________Freeing the GPU memory here_______________________
+
+  cudaFree(deviceInput);
+  cudaFree(deviceOutput);
 
   wbTime_stop(GPU, "Freeing GPU Memory");
 
@@ -93,3 +127,6 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
+
+// http://s3.amazonaws.com/files.rai-project.com/userdata/build-6350d9f9b1b11b75c274158b.tar.gz
