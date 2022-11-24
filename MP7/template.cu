@@ -1,5 +1,7 @@
 #include <wb.h>
 
+#define BLOCKSIZE 32
+
 #define wbCheck(stmt)                                                     \
   do {                                                                    \
     cudaError_t err = stmt;                                               \
@@ -13,14 +15,28 @@
 __global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
                               int *matRowPerm, int *matRows,
                               float *matData, float *vec, int dim) {
-  //@@ insert spmv kernel for jds format
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  
+  if (i < dim) {
+    int row = matRowPerm[i];
+    for(int j = 0; j < matRows[i]; ++j) {
+      int idxIntoDataArray = matColStart[j] + i;
+      out[row] += matData[idxIntoDataArray] * vec[matCols[idxIntoDataArray]];
+    }
+  }
 }
 
 static void spmvJDS(float *out, int *matColStart, int *matCols,
                     int *matRowPerm, int *matRows, float *matData,
                     float *vec, int dim) {
+  
+  dim3 DimBlock(BLOCKSIZE, 1, 1);
+  dim3 DimGrid(ceil(float(dim) / BLOCKSIZE), 1, 1);
 
-  //@@ invoke spmv kernel for jds format
+
+  spmvJDSKernel<<<DimBlock, DimGrid>>>(out, matColStart, matCols, matRowPerm, matRows, matData, vec, dim);
+
 }
 
 int main(int argc, char **argv) {
@@ -33,8 +49,10 @@ int main(int argc, char **argv) {
   int *hostJDSRowPerm;
   int *hostJDSRows;
   float *hostJDSData;
+
   float *hostVector;
   float *hostOutput;
+
   int *deviceJDSColStart;
   int *deviceJDSCols;
   int *deviceJDSRowPerm;
